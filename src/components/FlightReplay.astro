@@ -1,0 +1,221 @@
+---
+
+import flightData from '../data/rocketcamp-flight.json';
+
+interface Props {
+  videoSrc: string;
+  /** Seconds into the video when ignition / t=0 occurs */
+  t0Offset?: number;
+}
+
+const { videoSrc, t0Offset = 0 } = Astro.props;
+
+const maxT = Math.max(...flightData.points.map((p) => p.t));
+const maxAlt = Math.max(...flightData.points.map((p) => p.alt));
+
+// Precompute SVG polyline points (viewBox: 600 x 260)
+const W = 600;
+const H = 260;
+const PAD = { top: 18, right: 16, bottom: 28, left: 48 };
+const plotW = W - PAD.left - PAD.right;
+const plotH = H - PAD.top - PAD.bottom;
+
+const xOf = (t: number) => PAD.left + (t / maxT) * plotW;
+const yOf = (alt: number) => PAD.top + plotH - (alt / maxAlt) * plotH;
+
+const pathD = flightData.points
+  .map((p, i) => `${i === 0 ? 'M' : 'L'}${xOf(p.t).toFixed(1)},${yOf(p.alt).toFixed(1)}`)
+  .join(' ');
+
+const niceLabels: Record<string, string> = {
+  LIFTOFF: 'Liftoff',
+  BURNOUT: 'Burnout',
+  APOGEE: 'Apogee',
+  RECOVERY_DEVICE_DEPLOYMENT: 'Chute Deploy',
+  GROUND_HIT: 'Touchdown',
+};
+---
+
+<div
+  class="flight-replay"
+  data-flight={JSON.stringify(flightData)}
+  data-t0={t0Offset}
+  data-max-t={maxT}
+  data-max-alt={maxAlt}
+>
+  <div class="replay-grid">
+    <div class="video-wrap">
+      <video class="flight-video" src={videoSrc} controls playsinline preload="metadata"></video>
+    </div>
+
+    <div class="telemetry-wrap">
+      <div class="hud">
+        <div class="hud-cell"><span>T+</span><strong data-hud="t">0.00 s</strong></div>
+        <div class="hud-cell"><span>ALTITUDE</span><strong data-hud="alt">0.0 ft</strong></div>
+        <div class="hud-cell"><span>VELOCITY</span><strong data-hud="vel">0.0 ft/s</strong></div>
+        <div class="hud-cell"><span>MACH</span><strong data-hud="mach">0.000</strong></div>
+        <div class="hud-cell"><span>LOAD</span><strong data-hud="acc">0.00 G</strong></div>
+      </div>
+
+      <svg class="alt-chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="OpenRocket altitude profile">
+        <!-- Grid lines -->
+        {[0, 0.25, 0.5, 0.75, 1].map((frac) => {
+          const y = PAD.top + plotH * (1 - frac);
+          const val = Math.round(maxAlt * frac);
+          return (
+            <g>
+              <line x1={PAD.left} y1={y} x2={W - PAD.right} y2={y} class="grid-line" />
+              <text x={PAD.left - 8} y={y + 4} text-anchor="end" class="axis-text">{val} ft</text>
+            </g>
+          );
+        })}
+
+        <!-- Altitude curve -->
+        <path d={pathD} fill="none" class="alt-curve" />
+
+        <!-- Event markers -->
+        {flightData.events.map((ev) => (
+          <line
+            x1={xOf(ev.t)}
+            y1={PAD.top}
+            x2={xOf(ev.t)}
+            y2={PAD.top + plotH}
+            class="event-line"
+          />
+        ))}
+
+        <!-- Live playhead -->
+        <line x1={PAD.left} y1={PAD.top} x2={PAD.left} y2={PAD.top + plotH} class="playhead-line" />
+        <circle cx={PAD.left} cy={PAD.top + plotH} r="5" class="playhead-dot" />
+      </svg>
+
+      <div class="milestones">
+        {flightData.events.map((ev) => (
+          <button type="button" class="milestone-btn" data-jump-t={ev.t}>
+            {niceLabels[ev.label] ?? ev.label} ({ev.t.toFixed(1)}s)
+          </button>
+        ))}
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('.flight-replay').forEach((root) => {
+    const data = JSON.parse(root.dataset.flight || '{}');
+    const points = data.points || [];
+    const t0 = parseFloat(root.dataset.t0 || '0');
+    const maxT = parseFloat(root.dataset.maxT || '1');
+    const maxAlt = parseFloat(root.dataset.maxAlt || '1');
+
+    const video = root.querySelector<HTMLVideoElement>('.flight-video')!;
+    const svg = root.querySelector<SVGSVGElement>('.alt-chart')!;
+    const playheadLine = root.querySelector<SVGLineElement>('.playhead-line')!;
+    const playheadDot = root.querySelector<SVGCircleElement>('.playhead-dot')!;
+
+    const hud = {
+      t: root.querySelector('[data-hud="t"]')!,
+      alt: root.querySelector('[data-hud="alt"]')!,
+      vel: root.querySelector('[data-hud="vel"]')!,
+      mach: root.querySelector('[data-hud="mach"]')!,
+      acc: root.querySelector('[data-hud="acc"]')!,
+    };
+
+    const PAD = { top: 18, right: 16, bottom: 28, left: 48 };
+    const plotW = 600 - PAD.left - PAD.right;
+    const plotH = 260 - PAD.top - PAD.bottom;
+
+    function interpolate(simT: number) {
+      if (simT <= points[0].t) return points[0];
+      if (simT >= points[points.length - 1].t) return points[points.length - 1];
+      let lo = 0, hi = points.length - 1;
+      while (lo + 1 < hi) {
+        const mid = (lo + hi) >> 1;
+        if (points[mid].t <= simT) lo = mid;
+        else hi = mid;
+      }
+      const a = points[lo], b = points[hi];
+      const f = (simT - a.t) / (b.t - a.t || 1);
+      return {
+        t: simT,
+        alt: a.alt + (b.alt - a.alt) * f,
+        vel: a.vel + (b.vel - a.vel) * f,
+        mach: a.mach + (b.mach - a.mach) * f,
+        accG: a.accG + (b.accG - a.accG) * f,
+      };
+    }
+
+    function render() {
+      const simT = Math.max(0, Math.min(maxT, video.currentTime - t0));
+      const p = interpolate(simT);
+      const x = PAD.left + (p.t / maxT) * plotW;
+      const y = PAD.top + plotH - (p.alt / maxAlt) * plotH;
+
+      playheadLine.setAttribute('x1', String(x));
+      playheadLine.setAttribute('x2', String(x));
+      playheadDot.setAttribute('cx', String(x));
+      playheadDot.setAttribute('cy', String(y));
+
+      hud.t.textContent = `${p.t.toFixed(2)} s`;
+      hud.alt.textContent = `${p.alt.toFixed(1)} ft`;
+      hud.vel.textContent = `${p.vel.toFixed(1)} ft/s`;
+      hud.mach.textContent = p.mach.toFixed(3);
+      hud.acc.textContent = `${p.accG.toFixed(2)} G`;
+    }
+
+    let rafId = 0;
+    const loop = () => {
+      render();
+      if (!video.paused && !video.ended) rafId = requestAnimationFrame(loop);
+    };
+
+    video.addEventListener('play', () => {
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(loop);
+    });
+    video.addEventListener('pause', () => cancelAnimationFrame(rafId));
+    video.addEventListener('seeked', render);
+    video.addEventListener('timeupdate', render);
+
+    // Click anywhere on the chart to scrub the video
+    svg.addEventListener('click', (e) => {
+      const rect = svg.getBoundingClientRect();
+      const svgX = ((e.clientX - rect.left) / rect.width) * 600;
+      const frac = Math.max(0, Math.min(1, (svgX - PAD.left) / plotW));
+      video.currentTime = frac * maxT + t0;
+      render();
+    });
+
+    // Click milestone buttons to jump straight to flight events
+    root.querySelectorAll<HTMLButtonElement>('[data-jump-t]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const targetT = parseFloat(btn.dataset.jumpT || '0');
+        video.currentTime = targetT + t0;
+        render();
+      });
+    });
+
+    render();
+  });
+</script>
+
+<style>
+  .flight-replay { margin: 2rem 0; }
+  .replay-grid { display: grid; grid-template-columns: auto 1fr; gap: 1.25rem; align-items: start; }
+  @media (max-width: 820px) { .replay-grid { grid-template-columns: 1fr; } }
+  .flight-video { max-height: 460px; width: auto; max-width: 100%; margin: 0 auto; display: block; border-radius: 10px; background: #000; }
+  .hud { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.5rem; margin-bottom: 0.75rem; }
+  .hud-cell { padding: 0.5rem; border-radius: 8px; border: 1px solid rgba(128,128,128,0.25); text-align: center; }
+  .hud-cell span { display: block; font-size: 0.65rem; opacity: 0.7; letter-spacing: 0.05em; }
+  .hud-cell strong { font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+  .alt-chart { width: 100%; height: auto; cursor: crosshair; border: 1px solid rgba(128,128,128,0.25); border-radius: 10px; }
+  .grid-line { stroke: rgba(128,128,128,0.2); stroke-dasharray: 3 3; }
+  .axis-text { fill: currentColor; opacity: 0.65; font-size: 11px; }
+  .alt-curve { stroke: #3b82f6; stroke-width: 2.5; }
+  .event-line { stroke: rgba(245,158,11,0.45); stroke-dasharray: 4 3; }
+  .playhead-line { stroke: #ef4444; stroke-width: 1.5; }
+  .playhead-dot { fill: #ef4444; }
+  .milestones { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem; }
+  .milestone-btn { padding: 0.35rem 0.65rem; font-size: 0.8rem; border-radius: 6px; border: 1px solid rgba(128,128,128,0.35); background: transparent; color: inherit; cursor: pointer; }
+  .milestone-btn:hover { border-color: #3b82f6; color: #3b82f6; }
+</style>

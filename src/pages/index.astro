@@ -1,0 +1,167 @@
+---
+import { getCollection } from 'astro:content';
+import BaseHead from '../components/BaseHead.astro';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+
+const projects = (await getCollection('projects')).sort(
+	(a, b) => new Date(b.data.startedDate ?? 0).valueOf() - new Date(a.data.startedDate ?? 0).valueOf()
+);
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<BaseHead
+			title="Aanand Shah — Aerospace Engineering"
+			description="Purdue Aerospace Engineering student working across flight dynamics simulation, hardware/manufacturing, and engineering data tools."
+		/>
+	</head>
+	<body>
+		<Header />
+		<main class="single-page">
+			<!-- Intro Section -->
+			<section class="intro">
+				<p class="eyebrow">aerospace engineering @ purdue</p>
+				<h1>Aanand Shah</h1>
+				<p class="bio">
+					I’m an Aerospace Engineering student at Purdue focused on flight dynamics simulation,
+					structural/aerodynamic analysis, and engineering data tools—connecting analytical modeling
+					with hands-on physical builds.
+				</p>
+			</section>
+
+			<hr class="divider" />
+
+			<!-- Projects Section -->
+			<section class="projects" id="projects">
+				<h2>Projects</h2>
+				<p class="projects-lead">
+					Engineering simulations, telemetry verification, and hardware-focused tools built at Purdue.
+				</p>
+
+				<div class="project-grid">
+					{projects.map((project) => (
+						<a class="project-card" href={`/projects/${project.id}/`}>
+							<h3>{project.data.title}</h3>
+							{project.data.category && (
+								<div class="meta">
+									<span class="badge">{project.data.category.replace('-', ' ').toUpperCase()}</span>
+									<span class="status">LAUNCHED</span>
+								</div>
+							)}
+							<p>{project.data.description}</p>
+							{project.data.techStack && (
+								<div class="tags">
+									{project.data.techStack.map((tag: string) => (
+										<span>{tag}</span>
+									))}
+								</div>
+							)}
+						</a>
+					))}
+				</div>
+			</section>
+		</main>
+		<Footer />
+	</body>
+</html>
+
+<style>
+	.single-page {
+		max-width: 960px;
+		margin: 0 auto;
+		padding: 3.25rem 1.5rem 4.5rem;
+	}
+	.eyebrow {
+		font-size: 0.78rem;
+		letter-spacing: 0.08em;
+		opacity: 0.72;
+		margin: 0 0 0.5rem 0;
+	}
+	.intro h1 {
+		font-size: clamp(2.2rem, 5vw, 3.1rem);
+		margin: 0 0 0.9rem 0;
+		line-height: 1.1;
+	}
+	.bio {
+		max-width: 66ch;
+		line-height: 1.68;
+		opacity: 0.9;
+		margin: 0;
+	}
+	.divider {
+		border: 0;
+		border-top: 1px solid rgba(148, 163, 184, 0.22);
+		margin: 2.75rem 0;
+	}
+	.projects h2 {
+		font-size: 1.85rem;
+		margin: 0 0 0.6rem 0;
+	}
+	.projects-lead {
+		max-width: 65ch;
+		line-height: 1.65;
+		opacity: 0.85;
+		margin: 0 0 1.75rem 0;
+	}
+	.project-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+		gap: 1.25rem;
+	}
+	.project-card {
+		display: block;
+		padding: 1.35rem;
+		border-radius: 10px;
+		border: 1px solid rgba(74, 222, 128, 0.25);
+		background: rgba(20, 83, 45, 0.14);
+		text-decoration: none;
+		color: inherit;
+		transition: border-color 0.15s ease, transform 0.15s ease;
+	}
+	.project-card:hover {
+		border-color: #4ade80;
+		transform: translateY(-2px);
+	}
+	.project-card h3 {
+		margin: 0 0 0.75rem 0;
+		font-size: 1.3rem;
+		line-height: 1.25;
+	}
+	.meta {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		margin-bottom: 0.85rem;
+		font-size: 0.72rem;
+	}
+	.badge {
+		padding: 0.2rem 0.45rem;
+		border-radius: 4px;
+		background: rgba(74, 222, 128, 0.16);
+		border: 1px solid rgba(74, 222, 128, 0.35);
+	}
+	.status {
+		color: #4ade80;
+		font-weight: 600;
+	}
+	.project-card p {
+		font-size: 0.88rem;
+		line-height: 1.6;
+		opacity: 0.88;
+		margin: 0 0 1rem 0;
+	}
+	.tags {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+	}
+	.tags span {
+		font-size: 0.74rem;
+		padding: 0.2rem 0.5rem;
+		border-radius: 4px;
+		background: rgba(148, 163, 184, 0.12);
+		border: 1px solid rgba(148, 163, 184, 0.2);
+	}
+</style>

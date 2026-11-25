@@ -1,0 +1,366 @@
+---
+interface Props {
+  defaultCaliber?: number;
+  defaultWindMph?: number;
+}
+
+const { defaultCaliber = 1.7, defaultWindMph = 14 } = Astro.props;
+---
+
+<section
+  class="wx-sim"
+  data-cal={defaultCaliber}
+  data-wind={defaultWindMph}
+>
+  <div class="wx-top">
+    <div>
+      <span class="wx-tag">H-CLASS LAUNCH SIMULATOR · WEATHERCOCK CHECK</span>
+      <h3>Stability Margin vs. Crosswind</h3>
+    </div>
+    <div class="wx-actions">
+      <button type="button" class="wx-play" data-play>▶ Play</button>
+      <button type="button" class="wx-reset" data-reset>Reset</button>
+    </div>
+  </div>
+
+  <div class="wx-sliders">
+    <label>
+      <span>Stability Margin: <strong data-out="cal">{defaultCaliber.toFixed(1)} cal</strong></span>
+      <input type="range" min="0.5" max="4.0" step="0.1" value={defaultCaliber} data-in="cal" />
+    </label>
+
+    <label>
+      <span>Crosswind: <strong data-out="wind">{defaultWindMph.toFixed(0)} mph</strong></span>
+      <input type="range" min="0" max="35" step="1" value={defaultWindMph} data-in="wind" />
+    </label>
+  </div>
+
+  <div class="wx-stage-wrap">
+    <svg class="wx-stage" viewBox="0 0 520 260" role="img" aria-label="H-motor weathercock launch simulation">
+      <!-- Wind streaks -->
+      <g class="wx-wind-lines">
+        <line x1="20" y1="55" x2="85" y2="55" />
+        <polygon points="85,51 93,55 85,59" />
+        <line x1="20" y1="115" x2="85" y2="115" />
+        <polygon points="85,111 93,115 85,119" />
+        <text x="20" y="36" class="wx-label">Wind →</text>
+      </g>
+
+      <!-- Launch rail -->
+      <line x1="150" y1="228" x2="150" y2="178" class="wx-rail" />
+
+      <!-- Ground line -->
+      <line x1="16" y1="228" x2="504" y2="228" class="wx-ground" />
+
+      <!-- Flight path -->
+      <path d="" fill="none" class="wx-path" data-path />
+
+      <!-- Rocket -->
+      <g data-rocket transform="translate(150, 200) rotate(0)">
+        <polygon points="0,-24 -7,-10 7,-10" class="wx-nose" />
+        <rect x="-7" y="-10" width="14" height="28" class="wx-body" />
+        <polygon points="-7,10 -15,20 -7,18" class="wx-fin" />
+        <polygon points="7,10 15,20 7,18" class="wx-fin" />
+        <!-- H-motor exhaust plume -->
+        <polygon points="-4,18 0,34 4,18" class="wx-flame" data-flame />
+      </g>
+
+      <!-- Error / Status badge inside SVG -->
+      <g data-error-badge class="wx-error-badge" visibility="hidden">
+        <rect x="312" y="22" width="190" height="44" rx="8" class="wx-err-box" />
+        <text x="324" y="41" class="wx-err-title">✕ SIM ERROR: WEATHERCOCK</text>
+        <text x="324" y="57" class="wx-err-sub" data-err-reason>Excessive wind / pitch excursion</text>
+      </g>
+    </svg>
+  </div>
+
+  <div class="wx-status" data-status>Ready — adjust sliders and press Play.</div>
+</section>
+
+<script>
+  document.querySelectorAll<HTMLElement>('.wx-sim').forEach((root) => {
+    const calInput = root.querySelector<HTMLInputElement>('[data-in="cal"]');
+    const windInput = root.querySelector<HTMLInputElement>('[data-in="wind"]');
+    const calOut = root.querySelector('[data-out="cal"]');
+    const windOut = root.querySelector('[data-out="wind"]');
+    const playBtn = root.querySelector<HTMLButtonElement>('[data-play]');
+    const resetBtn = root.querySelector<HTMLButtonElement>('[data-reset]');
+    const rocket = root.querySelector<SVGGElement>('[data-rocket]');
+    const flame = root.querySelector<SVGPolygonElement>('[data-flame]');
+    const pathEl = root.querySelector<SVGPathElement>('[data-path]');
+    const errorBadge = root.querySelector<SVGGElement>('[data-error-badge]');
+    const errReason = root.querySelector('[data-err-reason]');
+    const statusEl = root.querySelector('[data-status]');
+
+    if (!calInput || !windInput || !rocket || !flame || !pathEl || !playBtn || !resetBtn || !statusEl) {
+      return;
+    }
+
+    let animId = 0;
+    let progress = 0; // 0 to 1
+    let playing = false;
+
+    function getState() {
+      const cal = parseFloat(calInput!.value);
+      const wind = parseFloat(windInput!.value);
+      // Weathercock severity increases with wind and stability margin off the rail
+      const weathercockIndex = (wind / 16) * (0.55 + cal * 0.45);
+      const fails = cal < 1.0 || weathercockIndex > 1.25;
+      return { cal, wind, weathercockIndex, fails };
+    }
+
+    function syncLabels() {
+      const { cal, wind } = getState();
+      if (calOut) calOut.textContent = `${cal.toFixed(1)} cal`;
+      if (windOut) windOut.textContent = `${wind.toFixed(0)} mph`;
+    }
+
+    function drawFrame(p: number) {
+      const { cal, wind, weathercockIndex, fails } = getState();
+      const startX = 150;
+      const startY = 200;
+
+      // Pitch angle tilts right (+x, downwind) as weathercocking increases
+      const maxPitch = fails
+        ? Math.min(78, 28 + weathercockIndex * 34)
+        : Math.min(22, weathercockIndex * 14);
+
+      const points: string[] = [];
+      const steps = Math.max(2, Math.floor(p * 50));
+      let curX = startX;
+      let curY = startY;
+      let curAngle = 0;
+
+      for (let i = 0; i <= steps; i++) {
+        const t = i / 50;
+        const turn = Math.min(1, t * 2.2);
+        const angle = maxPitch * turn;
+        const drift = t * (35 + wind * 5.2 * (fails ? 1.5 : 0.7));
+        const climb = t * (fails && t > 0.55 ? 115 - (t - 0.55) * 150 : 165);
+
+        curX = startX + drift;
+        curY = Math.min(222, Math.max(24, startY - climb));
+        curAngle = angle;
+        points.push(`${i === 0 ? 'M' : 'L'}${curX.toFixed(1)},${curY.toFixed(1)}`);
+      }
+
+      pathEl!.setAttribute('d', points.join(' '));
+      rocket!.setAttribute('transform', `translate(${curX.toFixed(1)}, ${curY.toFixed(1)}) rotate(${curAngle.toFixed(1)})`);
+      flame!.setAttribute('visibility', p > 0.02 && !(fails && p > 0.75) ? 'visible' : 'hidden');
+
+      if (fails && p >= 0.65) {
+        errorBadge?.setAttribute('visibility', 'visible');
+        if (errReason) {
+          errReason.textContent =
+            cal < 1.0 ? 'Margin below 1.0 cal' : `Wind ${wind} mph @ ${cal.toFixed(1)} cal`;
+        }
+        statusEl!.textContent = `✕ Error: Rocket weathercocked in ${wind} mph wind at ${cal.toFixed(1)} cal — simulation aborted.`;
+        pathEl!.classList.add('wx-path-err');
+      } else {
+        errorBadge?.setAttribute('visibility', 'hidden');
+        pathEl!.classList.remove('wx-path-err');
+        if (p >= 1) {
+          statusEl!.textContent = `✓ Nominal flight: H-motor cleared rail and continued flying at ${cal.toFixed(1)} cal in ${wind} mph wind.`;
+        } else if (playing) {
+          statusEl!.textContent = `Simulating flight... (${cal.toFixed(1)} cal, ${wind} mph wind)`;
+        }
+      }
+    }
+
+    function step() {
+      progress = Math.min(1, progress + 0.018);
+      drawFrame(progress);
+
+      const { fails } = getState();
+      if (fails && progress >= 0.75) {
+        playing = false;
+        playBtn!.textContent = '▶ Play';
+        return;
+      }
+
+      if (progress < 1 && playing) {
+        animId = requestAnimationFrame(step);
+      } else {
+        playing = false;
+        playBtn!.textContent = '▶ Play';
+      }
+    }
+
+    function play() {
+      cancelAnimationFrame(animId);
+      if (progress >= 0.99 || (getState().fails && progress >= 0.75)) {
+        progress = 0;
+      }
+      playing = true;
+      playBtn!.textContent = '❚❚ Pause';
+      animId = requestAnimationFrame(step);
+    }
+
+    function reset() {
+      cancelAnimationFrame(animId);
+      playing = false;
+      progress = 0;
+      playBtn!.textContent = '▶ Play';
+      errorBadge?.setAttribute('visibility', 'hidden');
+      pathEl!.classList.remove('wx-path-err');
+      pathEl!.setAttribute('d', '');
+      rocket!.setAttribute('transform', 'translate(150, 200) rotate(0)');
+      flame!.setAttribute('visibility', 'hidden');
+      statusEl!.textContent = 'Ready — adjust sliders and press Play.';
+    }
+
+    playBtn.addEventListener('click', () => {
+      if (playing) {
+        playing = false;
+        cancelAnimationFrame(animId);
+        playBtn.textContent = '▶ Play';
+      } else {
+        play();
+      }
+    });
+
+    resetBtn.addEventListener('click', reset);
+
+    [calInput, windInput].forEach((input) => {
+      input.addEventListener('input', () => {
+        syncLabels();
+        if (progress > 0) {
+          drawFrame(progress);
+        }
+      });
+    });
+
+    syncLabels();
+    reset();
+  });
+</script>
+
+<style>
+  .wx-sim {
+    margin: 1.75rem 0;
+    padding: 1.15rem;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    border-radius: 12px;
+    background: rgba(15, 23, 42, 0.04);
+  }
+  .wx-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+  }
+  .wx-tag {
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    opacity: 0.7;
+    display: block;
+  }
+  .wx-top h3 {
+    margin: 0.15rem 0 0 0;
+    font-size: 1.1rem;
+  }
+  .wx-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+  .wx-play,
+  .wx-reset {
+    padding: 0.4rem 0.85rem;
+    border-radius: 8px;
+    border: 1px solid rgba(148, 163, 184, 0.45);
+    background: #2563eb;
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .wx-reset {
+    background: transparent;
+    color: inherit;
+  }
+  .wx-sliders {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+  @media (max-width: 640px) {
+    .wx-sliders {
+      grid-template-columns: 1fr;
+    }
+  }
+  .wx-sliders label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    font-size: 0.88rem;
+  }
+  .wx-stage {
+    width: 100%;
+    height: auto;
+    border-radius: 10px;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    background: #0b1120;
+    color: #e2e8f0;
+  }
+  .wx-label {
+    fill: #38bdf8;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .wx-wind-lines line {
+    stroke: #38bdf8;
+    stroke-width: 2;
+  }
+  .wx-wind-lines polygon {
+    fill: #38bdf8;
+  }
+  .wx-rail {
+    stroke: #94a3b8;
+    stroke-width: 2.5;
+  }
+  .wx-ground {
+    stroke: #475569;
+    stroke-width: 2;
+  }
+  .wx-path {
+    stroke: #38bdf8;
+    stroke-width: 2.5;
+    stroke-dasharray: 5 4;
+  }
+  .wx-path-err {
+    stroke: #ef4444;
+  }
+  .wx-nose {
+    fill: #f8fafc;
+  }
+  .wx-body {
+    fill: #cbd5e1;
+  }
+  .wx-fin {
+    fill: #60a5fa;
+  }
+  .wx-flame {
+    fill: #f97316;
+  }
+  .wx-err-box {
+    fill: rgba(127, 29, 29, 0.92);
+    stroke: #f87171;
+    stroke-width: 1.5;
+  }
+  .wx-err-title {
+    fill: #fecaca;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .wx-err-sub {
+    fill: #fca5a5;
+    font-size: 10px;
+  }
+  .wx-status {
+    margin-top: 0.75rem;
+    font-size: 0.88rem;
+    font-weight: 500;
+  }
+</style>

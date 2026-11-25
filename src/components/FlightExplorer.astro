@@ -1,0 +1,317 @@
+---
+import flightData from '../data/rocketcamp-flight.json';
+
+interface Props {
+  videoSelector?: string;
+  initialOffset?: number;
+}
+
+const { videoSelector = '.flight-video', initialOffset = 1.8 } = Astro.props;
+
+const phases = [
+  {
+    id: 'liftoff',
+    name: '01 · Liftoff & Rail Exit',
+    t: 0.047,
+    summary: 'Motor ignites off the pad; rail exit occurs at T+0.211 s (38.94 ft/s) with 1.73 calibers of stability.',
+  },
+  {
+    id: 'maxq',
+    name: '02 · Peak Velocity & Mach',
+    t: 2.149,
+    summary: 'Vehicle reaches peak simulated speed (375.43 ft/s, Mach 0.337) near motor burn prior to burnout.',
+  },
+  {
+    id: 'burnout',
+    name: '03 · Motor Burnout',
+    t: 2.398,
+    summary: 'Propellant burn completes at 572.79 ft (360.03 ft/s, Mach 0.324), entering unpowered coast toward apogee.',
+  },
+  {
+    id: 'apogee',
+    name: '04 · Apogee',
+    t: 10.237,
+    summary: 'Peak altitude (~1,725.8 ft) is reached around T+10.19–10.24 s as vertical velocity transitions into descent.',
+  },
+  {
+    id: 'chute',
+    name: '05 · Parachute Deployment',
+    t: 16.399,
+    summary: 'Deployment at 1,176.8 ft while descending at ~166 ft/s triggers a 34.52 G peak load at T+16.401 s.',
+  },
+];
+---
+
+<section
+  class="flight-explorer"
+  data-points={JSON.stringify(flightData.points)}
+  data-selector={videoSelector}
+>
+  <div class="explorer-header">
+    <span class="eyebrow">INTERACTIVE · FLIGHT PHASE INSPECTOR & SYNC CALIBRATOR</span>
+    <h3>Step through flight regimes & test video alignment</h3>
+  </div>
+
+  <div class="phase-tabs" role="tablist" aria-label="Flight phases">
+    {phases.map((ph, idx) => (
+      <button
+        type="button"
+        class:list={['phase-tab', { active: idx === 0 }]}
+        data-phase-t={ph.t}
+        data-phase-summary={ph.summary}
+        data-phase-title={ph.name}
+      >
+        {ph.name}
+      </button>
+    ))}
+  </div>
+
+  <div class="phase-detail">
+    <div class="phase-copy">
+      <h4 data-phase-heading>{phases[0].name}</h4>
+      <p data-phase-text>{phases[0].summary}</p>
+    </div>
+    <div class="phase-metrics">
+      <div><span>SIM TIME</span><strong data-m-t>0.05 s</strong></div>
+      <div><span>ALTITUDE</span><strong data-m-alt>0.1 ft</strong></div>
+      <div><span>VELOCITY</span><strong data-m-vel>4.9 ft/s</strong></div>
+      <div><span>MACH</span><strong data-m-mach>0.007</strong></div>
+      <div><span>G-LOAD</span><strong data-m-g>5.55 G</strong></div>
+    </div>
+  </div>
+
+  <div class="sync-controls">
+    <label class="offset-control">
+      <span>Video Start Offset (<code>t0</code>): <strong data-offset-val>{initialOffset.toFixed(1)}s</strong></span>
+      <input
+        type="range"
+        min="0"
+        max="40"
+        step="0.1"
+        value={initialOffset}
+        data-offset-slider
+      />
+    </label>
+
+    <div class="speed-group">
+      <span>Speed:</span>
+      {[0.5, 1, 1.5, 2].map((spd) => (
+        <button type="button" class:list={['speed-btn', { active: spd === 1 }]} data-speed={spd}>
+          {spd}x
+        </button>
+      ))}
+    </div>
+  </div>
+</section>
+
+<script>
+  document.querySelectorAll<HTMLElement>('.flight-explorer').forEach((root) => {
+    const points = JSON.parse(root.dataset.points || '[]');
+    const selector = root.dataset.selector || '.flight-video';
+    const video = document.querySelector<HTMLVideoElement>(selector);
+
+    const headingEl = root.querySelector('[data-phase-heading]')!;
+    const textEl = root.querySelector('[data-phase-text]')!;
+    const mT = root.querySelector('[data-m-t]')!;
+    const mAlt = root.querySelector('[data-m-alt]')!;
+    const mVel = root.querySelector('[data-m-vel]')!;
+    const mMach = root.querySelector('[data-m-mach]')!;
+    const mG = root.querySelector('[data-m-g]')!;
+
+    const slider = root.querySelector<HTMLInputElement>('[data-offset-slider]')!;
+    const offsetVal = root.querySelector('[data-offset-val]')!;
+
+    let currentOffset = parseFloat(slider.value || '1.8');
+
+    function nearestPoint(targetT: number) {
+      if (!points.length) return { t: targetT, alt: 0, vel: 0, mach: 0, accG: 0 };
+      let best = points[0];
+      let bestDiff = Math.abs(points[0].t - targetT);
+      for (const p of points) {
+        const d = Math.abs(p.t - targetT);
+        if (d < bestDiff) {
+          best = p;
+          bestDiff = d;
+        }
+      }
+      return best;
+    }
+
+    function selectPhase(btn: HTMLButtonElement) {
+      root.querySelectorAll('.phase-tab').forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      const t = parseFloat(btn.dataset.phaseT || '0');
+      const pt = nearestPoint(t);
+
+      headingEl.textContent = btn.dataset.phaseTitle || '';
+      textEl.textContent = btn.dataset.phaseSummary || '';
+      mT.textContent = `${pt.t.toFixed(2)} s`;
+      mAlt.textContent = `${pt.alt.toFixed(1)} ft`;
+      mVel.textContent = `${pt.vel.toFixed(1)} ft/s`;
+      mMach.textContent = pt.mach.toFixed(3);
+      mG.textContent = `${pt.accG.toFixed(2)} G`;
+
+      if (video) {
+        video.currentTime = Math.max(0, t + currentOffset);
+      }
+    }
+
+    root.querySelectorAll<HTMLButtonElement>('.phase-tab').forEach((btn) => {
+      btn.addEventListener('click', () => selectPhase(btn));
+    });
+
+    slider.addEventListener('input', () => {
+      currentOffset = parseFloat(slider.value || '0');
+      offsetVal.textContent = `${currentOffset.toFixed(1)}s`;
+      root.dispatchEvent(new CustomEvent('flight-offset-change', { detail: { t0: currentOffset }, bubbles: true }));
+    });
+
+    root.querySelectorAll<HTMLButtonElement>('[data-speed]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        root.querySelectorAll('[data-speed]').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        if (video) {
+          video.playbackRate = parseFloat(btn.dataset.speed || '1');
+        }
+      });
+    });
+
+    const firstTab = root.querySelector<HTMLButtonElement>('.phase-tab');
+    if (firstTab) {
+      const t = parseFloat(firstTab.dataset.phaseT || '0');
+      const pt = nearestPoint(t);
+      mT.textContent = `${pt.t.toFixed(2)} s`;
+      mAlt.textContent = `${pt.alt.toFixed(1)} ft`;
+      mVel.textContent = `${pt.vel.toFixed(1)} ft/s`;
+      mMach.textContent = pt.mach.toFixed(3);
+      mG.textContent = `${pt.accG.toFixed(2)} G`;
+    }
+  });
+</script>
+
+<style>
+  .flight-explorer {
+    margin: 2rem 0;
+    padding: 1.25rem;
+    border: 1px solid var(--border-color, rgba(128, 128, 128, 0.28));
+    border-radius: 12px;
+    background: var(--bg-secondary, rgba(128, 128, 128, 0.06));
+  }
+  .eyebrow {
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+    opacity: 0.72;
+    display: block;
+    margin-bottom: 0.25rem;
+  }
+  .flight-explorer h3 {
+    margin: 0 0 1rem 0;
+    font-size: 1.15rem;
+  }
+  .phase-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin-bottom: 1rem;
+  }
+  .phase-tab {
+    padding: 0.45rem 0.7rem;
+    font-size: 0.8rem;
+    border-radius: 7px;
+    border: 1px solid rgba(128, 128, 128, 0.35);
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .phase-tab.active,
+  .phase-tab:hover {
+    border-color: var(--accent, #3b82f6);
+    background: rgba(59, 130, 246, 0.12);
+  }
+  .phase-detail {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap: 1rem;
+    align-items: center;
+    padding: 1rem;
+    border-radius: 10px;
+    border: 1px solid rgba(128, 128, 128, 0.2);
+    background: var(--bg-primary, transparent);
+  }
+  @media (max-width: 780px) {
+    .phase-detail {
+      grid-template-columns: 1fr;
+    }
+  }
+  .phase-copy h4 {
+    margin: 0 0 0.35rem 0;
+    font-size: 1rem;
+  }
+  .phase-copy p {
+    margin: 0;
+    font-size: 0.9rem;
+    line-height: 1.55;
+  }
+  .phase-metrics {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+  .phase-metrics div {
+    padding: 0.45rem 0.6rem;
+    border-radius: 7px;
+    border: 1px solid rgba(128, 128, 128, 0.2);
+  }
+  .phase-metrics span {
+    display: block;
+    font-size: 0.65rem;
+    opacity: 0.7;
+  }
+  .phase-metrics strong {
+    font-size: 0.92rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .sync-controls {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 1rem;
+    padding-top: 0.85rem;
+    border-top: 1px solid rgba(128, 128, 128, 0.2);
+    font-size: 0.85rem;
+  }
+  .offset-control {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex: 1;
+    min-width: 240px;
+  }
+  .offset-control input[type="range"] {
+    flex: 1;
+  }
+  .speed-group {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .speed-btn {
+    padding: 0.25rem 0.55rem;
+    font-size: 0.78rem;
+    border-radius: 6px;
+    border: 1px solid rgba(128, 128, 128, 0.35);
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .speed-btn.active,
+  .speed-btn:hover {
+    border-color: var(--accent, #3b82f6);
+    background: rgba(59, 130, 246, 0.12);
+  }
+</style>

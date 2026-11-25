@@ -1,0 +1,334 @@
+---
+import { Image } from 'astro:assets';
+import type { CollectionEntry } from 'astro:content';
+import BaseHead from '../components/BaseHead.astro';
+import Breadcrumbs from '../components/Breadcrumbs.astro';
+import Footer from '../components/Footer.astro';
+import FormattedDate from '../components/FormattedDate.astro';
+import Header from '../components/Header.astro';
+import VersionHistory from '../components/VersionHistory.astro';
+import Changelog from '../components/Changelog.astro';
+
+type Props = CollectionEntry<'projects'>['data'] & {
+	slug: string;
+};
+
+const {
+	title,
+	description,
+	subtitle,
+	role,
+	org,
+	timeline,
+	tags,
+	category,
+	status,
+	version,
+	versionStatus,
+	currentVersion,
+	majorVersions,
+	changelog,
+	startedDate,
+	launchedDate,
+	updatedDate,
+	heroImage,
+	techStack,
+	repoUrl,
+	liveUrl,
+	slug
+} = Astro.props;
+
+// Build breadcrumb items
+const isPreviousVersion = versionStatus === 'previous';
+const breadcrumbItems = [
+	{ label: 'Home', href: '/' },
+	{ label: 'Projects', href: '/projects/' },
+];
+
+if (isPreviousVersion && currentVersion) {
+	// For previous versions: Projects > Project Name > vX.X
+	breadcrumbItems.push({ label: title, href: `/projects/${currentVersion}/` });
+	breadcrumbItems.push({ label: version || 'Previous' });
+} else {
+	// For current versions: Projects > Project Name
+	breadcrumbItems.push({ label: title });
+}
+
+const categoryLabels = {
+	'flight-dynamics': 'Flight Dynamics',
+	'structures-fea': 'Structures & FEA',
+	'propulsion': 'Propulsion',
+	'manufacturing': 'Manufacturing',
+	'systems-ml': 'Systems & ML',
+};
+---
+<html lang="en">
+	<head>
+		<BaseHead title={title} description={description} />
+		<style>
+			main { width: 100%; margin: 0; padding: 0; }
+
+			/* One narrow reading column */
+			.page {
+				max-width: 720px;
+				margin: 0 auto;
+				padding: 0 1.25rem var(--space-xl);
+			}
+			.breadcrumbs-wrapper { max-width: 720px; margin: 0 auto; padding: 0.75rem 1.25rem 0; }
+			.hero-image { max-width: 720px; margin: 0 auto; padding: 0 1.25rem; }
+
+			/* ---------- Title block ---------- */
+			.kicker {
+				margin: var(--space-lg) 0 0.5rem;
+				font-size: 0.75rem;
+				letter-spacing: 0.08em;
+				text-transform: uppercase;
+				color: var(--accent);
+			}
+			h1 { margin: 0 0 0.5rem; font-size: clamp(1.9rem, 5vw, 2.6rem); letter-spacing: -0.02em; }
+			.subtitle { margin: 0 0 1.5rem; font-size: 1.05rem; color: rgb(var(--gray)); }
+			.lede { margin: 0 0 1.75rem; font-size: 0.95rem; line-height: 1.8; }
+			.stack { margin: 0 0 1.75rem; font-size: 0.8rem; color: rgb(var(--gray)); }
+
+			.facts {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+				gap: 1rem 1.5rem;
+				margin: 0 0 1.75rem;
+				padding: 1.25rem 0;
+				border-top: 1px solid var(--border-color);
+				border-bottom: 1px solid var(--border-color);
+			}
+			.facts dt { font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: rgb(var(--gray)); }
+			.facts dd { margin: 0.15rem 0 0; font-size: 0.85rem; }
+
+			.links { display: flex; gap: 1.25rem; margin: 0 0 1.75rem; font-size: 0.85rem; }
+
+			/* Section index: 01 The problem  02 ... */
+			.section-nav { display: flex; flex-wrap: wrap; gap: 0.4rem 1.25rem; margin: 0 0 var(--space-xl); font-size: 0.8rem; }
+			.section-nav :global(a) { color: rgb(var(--gray)); text-decoration: none; }
+			.section-nav :global(a:hover) { color: var(--accent); }
+			.section-nav :global(span) { color: var(--accent); margin-right: 0.5rem; }
+
+			/* ---------- Prose (slot content is outside Astro's scope, so :global) ---------- */
+			.prose { counter-reset: sec; font-size: 0.95rem; line-height: 1.8; }
+			.prose :global(h2) {
+				counter-increment: sec;
+				margin: var(--space-xl) 0 0.75rem;
+				padding-top: var(--space-lg);
+				border-top: 1px solid var(--border-color);
+				font-size: 1.35rem;
+				letter-spacing: -0.01em;
+				scroll-margin-top: 1rem;
+			}
+			.prose :global(h2::before) {
+				content: counter(sec, decimal-leading-zero);
+				display: block;
+				margin-bottom: 0.4rem;
+				font-size: 0.75rem;
+				font-weight: 500;
+				letter-spacing: 0.08em;
+				color: var(--accent);
+			}
+			.prose :global(h3) { margin: 1.75rem 0 0.5rem; font-size: 1.05rem; }
+			.prose :global(p) { margin: 0 0 1.25em; }
+			.prose :global(strong) { font-weight: 600; }
+			.prose :global(code) { font-size: 0.85em; padding: 0.1em 0.35em; }
+
+			/* Tables: hairlines only */
+			.prose :global(table) { width: 100%; margin: 1.5rem 0; border-collapse: collapse; font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+			.prose :global(th) { padding: 0.5rem 0.75rem; font-weight: 500; font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; color: rgb(var(--gray)); border-bottom: 1px solid var(--border-color); }
+			.prose :global(td) { padding: 0.55rem 0.75rem; border-bottom: 1px solid var(--border-color); }
+			.prose :global(td:first-child), .prose :global(th:first-child) { padding-left: 0; }
+			.prose :global(td:last-child), .prose :global(th:last-child) { padding-right: 0; }
+			.prose :global(thead:has(th:empty + th:empty)) { display: none; }
+
+			/* Equations: let them breathe, scroll instead of overflow on phones */
+			.prose :global(.katex-display) { margin: 1.5rem 0; padding: 0.25rem 0; overflow-x: auto; overflow-y: hidden; }
+			.prose :global(.katex) { font-size: 1.05em; }
+
+			/* Let the replay break out of the narrow text column */
+			.prose :global(.flight-replay) {
+				width: min(1000px, calc(100vw - 2.5rem));
+				margin: var(--space-lg) 0;
+				position: relative;
+				left: 50%;
+				transform: translateX(-50%);
+			}
+		</style>
+		<script>
+			// Build the numbered section index from the h2s
+			document.addEventListener('DOMContentLoaded', () => {
+				const nav = document.querySelector('.section-nav');
+				const h2s = Array.from(document.querySelectorAll('.prose h2'));
+				if (!nav || h2s.length < 2) { nav?.remove(); return; }
+				nav.innerHTML = h2s.map((h, i) => {
+					const text = h.textContent?.trim() || '';
+					h.id = h.id || text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+					return `<a href="#${h.id}"><span>${String(i + 1).padStart(2, '0')}</span>${text}</a>`;
+				}).join('');
+			});
+		</script>
+		<script>
+			import mermaid from 'mermaid';
+
+			document.addEventListener('DOMContentLoaded', async () => {
+				mermaid.initialize({
+					startOnLoad: false,
+					theme: 'neutral',
+					themeVariables: {
+						fontSize: '14px',
+						fontFamily: '"JetBrains Mono", monospace',
+					},
+					flowchart: {
+						padding: 20,
+						nodeSpacing: 60,
+						rankSpacing: 60,
+						curve: 'basis',
+						useMaxWidth: true,
+						htmlLabels: true,
+						diagramPadding: 20,
+					},
+				});
+
+				// Find all pre blocks with mermaid diagrams
+				const allPre = document.querySelectorAll('pre');
+				const mermaidPres: Element[] = [];
+
+				allPre.forEach((pre) => {
+					const text = pre.textContent || '';
+					if (text.includes('graph TB') || text.includes('graph TD') ||
+					    text.includes('flowchart') || text.includes('sequenceDiagram') ||
+					    text.includes('classDiagram') || text.includes('stateDiagram') ||
+					    text.includes('gantt') || text.includes('pie')) {
+						mermaidPres.push(pre);
+					}
+				});
+
+				for (const pre of mermaidPres) {
+					const code = pre.textContent || '';
+					const div = document.createElement('div');
+					div.className = 'mermaid';
+					div.textContent = code;
+					div.style.margin = '1.5rem 0';
+					div.style.display = 'flex';
+					div.style.justifyContent = 'center';
+					pre.replaceWith(div);
+				}
+
+				const mermaidDivs = document.querySelectorAll('.mermaid');
+				if (mermaidDivs.length > 0) {
+					try {
+						await mermaid.run({ querySelector: '.mermaid' });
+
+						// Enable zoom on rendered diagrams
+						const svgs = document.querySelectorAll('.mermaid svg');
+						svgs.forEach(svg => {
+							(svg as HTMLElement).style.cursor = 'zoom-in';
+							(svg as HTMLElement).style.transition = 'opacity 0.2s';
+
+							svg.addEventListener('click', () => {
+								const overlay = document.createElement('div');
+								overlay.style.cssText = `
+									position: fixed;
+									top: 0;
+									left: 0;
+									width: 100vw;
+									height: 100vh;
+									background: rgba(0, 0, 0, 0.9);
+									display: flex;
+									align-items: center;
+									justify-content: center;
+									z-index: 9999;
+									cursor: zoom-out;
+									padding: 48px;
+									box-sizing: border-box;
+								`;
+
+								const clone = svg.cloneNode(true) as HTMLElement;
+								clone.style.cssText = `
+									max-width: 90vw;
+									max-height: 90vh;
+									width: auto;
+									height: auto;
+									cursor: zoom-out;
+								`;
+
+								overlay.appendChild(clone);
+								document.body.appendChild(overlay);
+
+								overlay.addEventListener('click', () => overlay.remove());
+
+								const closeOnEsc = (e: KeyboardEvent) => {
+									if (e.key === 'Escape') {
+										overlay.remove();
+										document.removeEventListener('keydown', closeOnEsc);
+									}
+								};
+								document.addEventListener('keydown', closeOnEsc);
+							});
+						});
+					} catch (error) {
+						console.error('Mermaid rendering error:', error);
+					}
+				}
+			});
+		</script>
+	</head>
+
+	<body>
+		<Header />
+
+		<div class="breadcrumbs-wrapper">
+			<Breadcrumbs items={breadcrumbItems} />
+		</div>
+
+		<main>
+			<article>
+				{heroImage && (
+					<div class="hero-image"><Image width={1020} height={510} src={heroImage} alt="" /></div>
+				)}
+
+				<div class="page">
+					<p class="kicker">{categoryLabels[category]} project</p>
+					<h1>{title}</h1>
+					{subtitle && <p class="subtitle">{subtitle}</p>}
+					<p class="lede">{description}</p>
+
+					<p class="stack">{techStack.join(' · ')}</p>
+
+					<dl class="facts">
+						{role && <div><dt>Role</dt><dd>{role}</dd></div>}
+						{org && <div><dt>Org</dt><dd>{org}</dd></div>}
+						<div><dt>Timeline</dt><dd>{timeline ?? <FormattedDate date={startedDate} />}</dd></div>
+						<div><dt>Status</dt><dd>{status.replace('-', ' ')}</dd></div>
+						<div><dt>Focus</dt><dd>{tags.slice(0, 3).join(' · ')}</dd></div>
+					</dl>
+
+					{(liveUrl || repoUrl) && (
+						<div class="links">
+							{liveUrl && <a href={liveUrl} target="_blank" rel="noopener">Live site →</a>}
+							{repoUrl && <a href={repoUrl} target="_blank" rel="noopener">GitHub →</a>}
+						</div>
+					)}
+
+					<VersionHistory
+						currentVersion={version}
+						majorVersions={majorVersions}
+						isPreviousVersion={isPreviousVersion}
+						currentVersionSlug={currentVersion}
+					/>
+
+					<nav class="section-nav" aria-label="Sections"></nav>
+
+					<div class="prose">
+						<slot />
+					</div>
+
+					{!isPreviousVersion && <Changelog entries={changelog} />}
+				</div>
+			</article>
+		</main>
+		<Footer />
+	</body>
+</html>

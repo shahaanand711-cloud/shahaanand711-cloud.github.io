@@ -1,0 +1,90 @@
+---
+title: 'Simultaneous Real Launch vs Simulated Data'
+subtitle: 'Syncing an OpenRocket simulation to launch footage.'
+description: 'Simulated flight is only useful if it matches the real one. This project focuses on accuracy of Openrocket simulation aligned to video of the launch to check rail-exit stability, motor performance, and deployment timing.'
+role: 'Flight dynamics'
+timeline: 'Fall 2026'
+category: 'flight-dynamics'
+startedDate: '2026-08-01'
+tags: ['OpenRocket', 'Flight Dynamics', 'Stability', 'RASAero']
+techStack: ['OpenRocket', 'Python', 'Pandas', 'Astro', 'TypeScript', 'SVG']
+---
+
+import FlightReplay from '../../components/FlightReplay.astro';
+
+<FlightReplay videoSrc="/videos/rocketcamp-launch.mp4" t0Offset={1.8} />
+
+## Key events
+
+Everything below comes from the OpenRocket export for an AeroTech H100W-DMS-14 flight. Stability is in calibers, defined in the next section.
+
+| Event | t (s) | Altitude (ft) | Speed (ft/s) | Mach | Stability (cal) |
+| :-- | --: | --: | --: | --: | --: |
+| Rail exit | 0.211 | 3.6 | 38.9 | 0.035 | 1.73 |
+| Peak velocity | 2.149 | 481 | 375.4 | 0.337 | 2.39 |
+| Burnout | 2.398 | 573 | 360.0 | 0.324 | 2.40 |
+| Apogee | 10.237 | 1,726 | 15.6 | 0.019 | 1.82 |
+| Chute deploy | 16.399 | 1,177 | 166.3 | 0.150 | 2.38 |
+| Touchdown | 57.853 | 0 | 0 | 0.004 | n/a |
+
+## Rail-exit stability
+
+On launch day I added 20 oz to the nose cone. Mass forward of the center of gravity moves it toward the nose, which widens the gap to the center of pressure without touching the outer geometry.
+
+Stability is measured in calibers, the CP–CG gap divided by the reference diameter $d$:
+
+$$
+\text{caliber} = \frac{x_{CP} - x_{CG}}{d}
+$$
+
+At rail exit the simulation has $x_{CG} = 21.20$ in, $x_{CP} = 28.13$ in, and $d = 4.0$ in:
+
+$$
+\frac{28.13 - 21.20}{4.0} = 1.73
+$$
+
+Stability peaks at 2.40 calibers near burnout. What matters is the value at rail exit, where aerodynamic forces first take over from the rail.
+
+## Why too much stability hurts
+
+The restoring moment scales with the stability margin and the angle of attack $\alpha$.
+
+$$
+M = q \, A_{\mathrm{ref}} \, C_{N_\alpha} \, (x_{CP} - x_{CG}) \, \alpha,
+\qquad q = \tfrac{1}{2} \rho v^2
+$$
+import WeathercockSim from '../../components/WeathercockSim.astro';
+
+<WeathercockSim defaultCaliber={1.7} defaultWindMph={14} />
+
+With a large margin, a crosswind at rail exit produces a strong moment that turns the nose into the wind. This is weathercocking. The flight path tilts downwind early, which adds drift and costs altitude.
+
+The extra nose mass has a second cost. For a given thrust, heavier means slower off the rail, since $a = F_{\mathrm{net}} / m$.
+
+## Motor
+
+| | |
+| :-- | :-- |
+| Motor | AeroTech H100W-DMS-14 |
+| Total impulse | 228 N·s |
+| Thrust | 99.6 N average, 130 N peak |
+| Burn time | 2.29 s |
+| Mass | 0.575 lb loaded, 0.309 lb empty |
+
+## Mass over the flight
+
+The vehicle starts at 3.342 lb and burns 0.266 lb (4.26 oz) of propellant by burnout, ending at 3.076 lb. The CG moves aft in the process, from 21.32 in to 19.93 in. After burnout, mass stays constant through touchdown.
+
+Mass changes the acceleration at every step of the powered phase:
+
+$$
+m(t)\,\frac{dv}{dt} = T(t) - D(v, h, \alpha) - m(t)\,g(h)\sin\gamma
+$$
+
+## Deployment
+
+The ejection charge fires at 16.4 s, which is 6.16 s after apogee. By then the rocket has fallen to 1,177 ft and is moving at 166 ft/s, so OpenRocket flags a high-speed deployment. The simulated opening load peaks at 34.5 G, and the descent slows to 28 ft/s by 57 s.
+
+## Checking against the video
+
+The replay above is the test. Rail exit, apogee, and deployment should land at the simulated times, and the deployment load tells me how much margin the recovery system has.
